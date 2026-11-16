@@ -98,3 +98,7 @@ docs/                    Screenshots
 - Windows 10 or 11
 - .NET Framework 4.8 (included with Windows)
 - Administrator rights
+
+## License
+
+[MIT](LICENSE) c 2026 Yaofeng Wang
