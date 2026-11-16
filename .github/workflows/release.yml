@@ -1,0 +1,63 @@
+name: Build & Release
+
+on:
+  push:
+    tags:
+      - 'v*'          # e.g. v1.2.0, v1.3.0-beta
+  workflow_dispatch:  # manual test build (uploads an artifact, no release)
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Determine version
+        id: ver
+        shell: pwsh
+        run: |
+          if ($env:GITHUB_REF_TYPE -eq 'tag') { $v = $env:GITHUB_REF_NAME } else { $v = '0.0.0-dev' }
+          "version=$v" >> $env:GITHUB_OUTPUT
+          Write-Host "Version: $v"
+
+      - name: Build TimeZoneChanger.exe
+        shell: powershell   # Windows PowerShell 5.1 (System.Drawing for the icon generator)
+        run: .\build.ps1 -Version "${{ steps.ver.outputs.version }}"
+
+      - name: Create checksum
+        shell: pwsh
+        run: |
+          $hash = (Get-FileHash TimeZoneChanger.exe -Algorithm SHA256).Hash.ToLower()
+          "$hash  TimeZoneChanger.exe" | Out-File -Encoding ascii TimeZoneChanger.exe.sha256
+          Get-Content TimeZoneChanger.exe.sha256
+          (Get-Item TimeZoneChanger.exe).VersionInfo | Format-List FileVersion, ProductName
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: TimeZoneChanger-${{ steps.ver.outputs.version }}
+          path: |
+            TimeZoneChanger.exe
+            TimeZoneChanger.exe.sha256
+
+      - name: Publish GitHub Release
+        if: github.ref_type == 'tag'
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Time Zone Changer ${{ steps.ver.outputs.version }}
+          generate_release_notes: true
+          prerelease: ${{ contains(steps.ver.outputs.version, '-') }}
+          files: |
+            TimeZoneChanger.exe
+            TimeZoneChanger.exe.sha256
+          body: |
+            ## Download
+            Download **TimeZoneChanger.exe** below and run it. No installer needed (requires Windows 10/11 with .NET Framework 4.8, which is built in).
+            The app asks for administrator rights (UAC) because changing the system time zone requires them.
+
+            Verify the download (optional): compare `Get-FileHash TimeZoneChanger.exe` with `TimeZoneChanger.exe.sha256`.

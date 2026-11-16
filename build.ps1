@@ -1,5 +1,10 @@
 ﻿# Builds TimeZoneChanger.exe using the C# compiler that ships with Windows (.NET Framework 4.x).
-# Usage:  powershell -ExecutionPolicy Bypass -File .\build.ps1
+# Usage:  powershell -ExecutionPolicy Bypass -File .\build.ps1 [-Version 1.2.3]
+
+param(
+    # Optional version stamped into the exe (e.g. "1.2.3" or "v1.2.3"). Used by the release workflow.
+    [string]$Version = ''
+)
 
 $ErrorActionPreference = 'Stop'
 $root = $PSScriptRoot
@@ -89,6 +94,25 @@ if (-not (Test-Path $ico)) {
     Write-Host "Generated icon: $ico"
 }
 
+# ---------- Optional version stamping ----------
+$csFile = Join-Path $src 'TimeZoneChanger.cs'
+$tempCs = $null
+if ($Version) {
+    $v = $Version.TrimStart('v', 'V') -replace '[^0-9.].*$', ''        # "v1.2.3-beta" -> "1.2.3"
+    $parts = @($v.Split('.') | Where-Object { $_ -ne '' })
+    while ($parts.Count -lt 4) { $parts += '0' }
+    $v4 = ($parts[0..3]) -join '.'
+    if ($v4 -notmatch '^\d+\.\d+\.\d+\.\d+$') { throw "Invalid version '$Version'" }
+    $code = [IO.File]::ReadAllText($csFile)
+    $code = $code -replace 'AssemblyVersion\("[^"]*"\)', "AssemblyVersion(`"$v4`")"
+    $code = $code -replace 'AssemblyFileVersion\("[^"]*"\)', "AssemblyFileVersion(`"$v4`")"
+    $code = $code -replace 'AssemblyInformationalVersion\("[^"]*"\)', "AssemblyInformationalVersion(`"$Version`")"
+    $tempCs = Join-Path ([IO.Path]::GetTempPath()) 'TimeZoneChanger.versioned.cs'
+    [IO.File]::WriteAllText($tempCs, $code, (New-Object Text.UTF8Encoding($true)))
+    $csFile = $tempCs
+    Write-Host "Stamping version $v4"
+}
+
 # ---------- Compile ----------
 # If the exe is currently running it is locked, but Windows allows renaming it - move it aside.
 if (Test-Path $out) {
@@ -99,8 +123,10 @@ if (Test-Path $out) {
 & $csc /nologo /target:winexe /optimize+ /platform:anycpu `
     "/out:$out" "/win32icon:$ico" "/win32manifest:$(Join-Path $src 'app.manifest')" "/resource:$ico,TimeZoneChanger.app.ico" `
     /reference:System.dll /reference:System.Core.dll /reference:System.Drawing.dll /reference:System.Windows.Forms.dll `
-    (Join-Path $src 'TimeZoneChanger.cs')
+    $csFile
 
-if ($LASTEXITCODE -ne 0) { throw "Build failed." }
+$code = $LASTEXITCODE
+if ($tempCs) { Remove-Item $tempCs -ErrorAction SilentlyContinue }
+if ($code -ne 0) { throw "Build failed." }
 Write-Host "Built: $out"
 
