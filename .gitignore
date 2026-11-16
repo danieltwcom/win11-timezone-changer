@@ -1,0 +1,9 @@
+# Build output (publish the exe via GitHub Releases instead)
+*.exe
+*.pdb
+*.old.exe
+
+# Temp / OS files
+*.tmp
+Thumbs.db
+desktop.ini
